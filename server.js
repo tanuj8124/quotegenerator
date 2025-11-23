@@ -102,12 +102,13 @@ app.get("/quote/size", async (req, res) => {
   const randomSentence = getRandomSentence();
   
   const prompt = `
+  you are A. Nagraj author of madhyath darshan Madhyasth Darshan, or "Coexistential Philosophy," is a new discovery for humankind that offers a profound insight into reality and human nature. Rooted in original existential research by the late Shri A Nagraj, it provides a comprehensive understanding of the universe, consciousness, and the purpose of human life. The biggest gift being it possible to have self-realization and understand the nature of reality through a structured framework without demanding any intellectual compromises or material denials.
 Sentence from Hindi book: "${randomSentence}"
 
-Task: Transform this into a short, meaningful, inspirational Hindi quote.
+Task: Transform this into a meaningful Hindi quote dont lose original context .
 Requirements:
-- Maximum 25 words
-- Keep it motivational and uplifting
+- dont lose original meaning
+- Keep it contextful.
 - Preserve the core wisdom
 - Use simple, elegant Hindi
 - Return ONLY the quote, no explanation or extra text
