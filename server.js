@@ -12,6 +12,8 @@ app.use(express.static('public'));
 // Load quotes database at startup
 let quotesDatabase = [];
 const QUOTES_FILE = path.join(__dirname, 'data', 'quotes_database.json');
+import cors from "cors";
+app.use(cors({ origin: "*" }));
 
 function loadQuotesDatabase() {
   try {
