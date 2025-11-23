@@ -1,14 +1,21 @@
 const express = require('express');
+const cors = require("cors");
 const path = require('path');
 const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Enable CORS
+app.use(cors({
+  origin: "*",
+  methods: ["GET", "POST"],
+  allowedHeaders: ["Content-Type"]
+}));
+
 // Middleware
 app.use(express.json());
 app.use(express.static('public'));
-
 // Load quotes database at startup
 let quotesDatabase = [];
 const QUOTES_FILE = path.join(__dirname, 'data', 'quotes_database.json');
