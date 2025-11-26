@@ -104,7 +104,7 @@ app.get('/quote', (req, res) => {
     quote: quote.text,
     page: quote.page,
     id: quote.id,
-    pdf_link: `/pdfjs/web/viewer.html?file=../../books/book.pdf#page=${quote.page}`
+    book: quote.book
   });
 });
 
