@@ -189,7 +189,7 @@ app.use((req, res) => {
   });
 });
 
-// Initialize and start server
+// Initialize and ster
 function startServer() {
   loadQuotesDatabase();
   
