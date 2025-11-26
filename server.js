@@ -147,6 +147,9 @@ function bookNameToSlug(bookName) {
  *   - unique: true/false (avoid repeating quotes)
  */
 app.get('/quote', (req, res) => {
+  stats.total_requests++;
+  stats.quote_requests++;
+  saveStats();
   const avoidRepeat = req.query.unique === 'true';
   const quote = getRandomQuote(avoidRepeat);
 
@@ -195,6 +198,9 @@ app.get('/books', (req, res) => {
 app.get('/quote/book/:bookSlug', (req, res) => {
   const bookSlug = req.params.bookSlug.toLowerCase();
   const avoidRepeat = req.query.unique === 'true';
+  stats.total_requests++;
+  stats.quote_requests++;
+  saveStats();
   
   // Find the book by matching slug
   const bookName = booksList.find(book => bookNameToSlug(book) === bookSlug);
@@ -253,6 +259,9 @@ app.get('/quote/:id', (req, res) => {
     book: quote.book,
     pdf_link: `/pdfjs/web/viewer.html?file=../../books/book.pdf#page=${quote.page}`
   });
+});
+app.get('/stats/requests', (req, res) => {
+  res.json(stats);
 });
 
 /**
@@ -347,8 +356,30 @@ app.use((req, res) => {
   });
 });
 
+
+
+const STATS_FILE = path.join(__dirname, 'data', 'stats.json');
+let stats = { total_requests: 0, quote_requests: 0, book_quote_requests: 0 };
+
+function loadStats() {
+  try {
+    if (fs.existsSync(STATS_FILE)) {
+      stats = JSON.parse(fs.readFileSync(STATS_FILE, "utf8"));
+    }
+  } catch (err) {
+    console.error("Error loading stats file:", err);
+  }
+}
+
+
+function saveStats() {
+  fs.writeFileSync(STATS_FILE, JSON.stringify(stats, null, 2));
+}
+
 // Initialize and start server
 function startServer() {
+    loadQuotesDatabase();
+  loadStats();
   loadQuotesDatabase();
   
   app.listen(PORT, () => {
