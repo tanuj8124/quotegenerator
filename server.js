@@ -16,10 +16,11 @@ app.use(cors({
 // Middleware
 app.use(express.json());
 app.use(express.static('public'));
+
 // Load quotes database at startup
 let quotesDatabase = [];
+let booksList = [];
 const QUOTES_FILE = path.join(__dirname, 'data', 'quotes_database.json');
-
 
 function loadQuotesDatabase() {
   try {
@@ -38,7 +39,11 @@ function loadQuotesDatabase() {
       process.exit(1);
     }
 
+    // Extract unique book names
+    booksList = [...new Set(quotesDatabase.map(q => q.book))].filter(Boolean);
+    
     console.log(`✅ Loaded ${quotesDatabase.length} quotes from database`);
+    console.log(`📚 Found ${booksList.length} books:`, booksList);
   } catch (error) {
     console.error('❌ Error loading quotes database:', error.message);
     process.exit(1);
@@ -47,8 +52,9 @@ function loadQuotesDatabase() {
 
 // Track served quotes to avoid repetition (optional feature)
 const servedQuotes = new Set();
+const servedQuotesByBook = {}; // Track served quotes per book
 
-// Helper function to get random quote
+// Helper function to get random quote from all books
 function getRandomQuote(avoidRepeat = false) {
   if (quotesDatabase.length === 0) {
     return null;
@@ -69,7 +75,6 @@ function getRandomQuote(avoidRepeat = false) {
     quote = quotesDatabase[randomIndex];
     attempts++;
 
-    // Break if we've tried too many times or not avoiding repeats
     if (!avoidRepeat || !servedQuotes.has(quote.id) || attempts >= maxAttempts) {
       break;
     }
@@ -82,11 +87,62 @@ function getRandomQuote(avoidRepeat = false) {
   return quote;
 }
 
+// Helper function to get random quote from a specific book
+function getRandomQuoteFromBook(bookName, avoidRepeat = false) {
+  const bookQuotes = quotesDatabase.filter(q => q.book === bookName);
+  
+  if (bookQuotes.length === 0) {
+    return null;
+  }
+
+  // Initialize tracking for this book if needed
+  if (!servedQuotesByBook[bookName]) {
+    servedQuotesByBook[bookName] = new Set();
+  }
+
+  // Reset served quotes if all have been shown for this book
+  if (avoidRepeat && servedQuotesByBook[bookName].size >= bookQuotes.length) {
+    servedQuotesByBook[bookName].clear();
+    console.log(`🔄 All quotes from "${bookName}" served, resetting...`);
+  }
+
+  let quote;
+  let attempts = 0;
+  const maxAttempts = 100;
+
+  do {
+    const randomIndex = Math.floor(Math.random() * bookQuotes.length);
+    quote = bookQuotes[randomIndex];
+    attempts++;
+
+    if (!avoidRepeat || !servedQuotesByBook[bookName].has(quote.id) || attempts >= maxAttempts) {
+      break;
+    }
+  } while (servedQuotesByBook[bookName].has(quote.id));
+
+  if (avoidRepeat) {
+    servedQuotesByBook[bookName].add(quote.id);
+  }
+
+  return quote;
+}
+
+// Helper function to convert book name to URL-friendly slug
+function bookNameToSlug(bookName) {
+  return bookName.toLowerCase()
+    .replace(/\.pdf$/, '') // Remove .pdf extension
+    .replace(/[^\w\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/_/g, '-') // Convert underscores to hyphens
+    .replace(/-+/g, '-')
+    .trim();
+}
+
 // API Routes
 
 /**
  * GET /quote
- * Returns a random quote from the book
+ * Returns a random quote from ALL books (original endpoint)
  * Query params:
  *   - unique: true/false (avoid repeating quotes)
  */
@@ -97,6 +153,67 @@ app.get('/quote', (req, res) => {
   if (!quote) {
     return res.status(500).json({
       error: 'No quotes available'
+    });
+  }
+
+  res.json({
+    quote: quote.text,
+    page: quote.page,
+    id: quote.id,
+    book: quote.book
+  });
+});
+
+/**
+ * GET /books
+ * Returns list of all available books
+ */
+app.get('/books', (req, res) => {
+  const booksWithCounts = booksList.map(book => {
+    const count = quotesDatabase.filter(q => q.book === book).length;
+    const slug = bookNameToSlug(book);
+    return {
+      name: book,
+      slug: slug,
+      quote_count: count,
+      endpoint: `/quote/book/${slug}`
+    };
+  });
+
+  res.json({
+    total_books: booksList.length,
+    books: booksWithCounts
+  });
+});
+
+/**
+ * GET /quote/book/:bookSlug
+ * Returns a random quote from a specific book
+ * Query params:
+ *   - unique: true/false (avoid repeating quotes from this book)
+ */
+app.get('/quote/book/:bookSlug', (req, res) => {
+  const bookSlug = req.params.bookSlug.toLowerCase();
+  const avoidRepeat = req.query.unique === 'true';
+  
+  // Find the book by matching slug
+  const bookName = booksList.find(book => bookNameToSlug(book) === bookSlug);
+  
+  if (!bookName) {
+    return res.status(404).json({
+      error: 'Book not found',
+      available_books: booksList.map(book => ({
+        name: book,
+        slug: bookNameToSlug(book)
+      }))
+    });
+  }
+
+  const quote = getRandomQuoteFromBook(bookName, avoidRepeat);
+
+  if (!quote) {
+    return res.status(500).json({
+      error: `No quotes available for book: ${bookName}`
     });
   }
 
@@ -133,6 +250,7 @@ app.get('/quote/:id', (req, res) => {
     quote: quote.text,
     page: quote.page,
     id: quote.id,
+    book: quote.book,
     pdf_link: `/pdfjs/web/viewer.html?file=../../books/book.pdf#page=${quote.page}`
   });
 });
@@ -142,21 +260,60 @@ app.get('/quote/:id', (req, res) => {
  * Returns statistics about the quotes database
  */
 app.get('/stats', (req, res) => {
+  const bookStats = booksList.map(book => ({
+    name: book,
+    slug: bookNameToSlug(book),
+    total_quotes: quotesDatabase.filter(q => q.book === book).length,
+    served_quotes: (servedQuotesByBook[book] || new Set()).size
+  }));
+
   res.json({
     total_quotes: quotesDatabase.length,
-    served_quotes: servedQuotes.size,
-    remaining_quotes: quotesDatabase.length - servedQuotes.size
+    total_books: booksList.length,
+    served_quotes_overall: servedQuotes.size,
+    remaining_quotes_overall: quotesDatabase.length - servedQuotes.size,
+    books: bookStats
   });
 });
 
 /**
  * POST /reset
  * Resets the served quotes tracker
+ * Query params:
+ *   - book: book slug (optional, resets specific book)
  */
 app.post('/reset', (req, res) => {
+  const bookSlug = req.query.book;
+
+  if (bookSlug) {
+    // Reset specific book
+    const bookName = booksList.find(book => bookNameToSlug(book) === bookSlug.toLowerCase());
+    
+    if (!bookName) {
+      return res.status(404).json({
+        error: 'Book not found'
+      });
+    }
+
+    if (servedQuotesByBook[bookName]) {
+      servedQuotesByBook[bookName].clear();
+    }
+
+    return res.json({
+      message: `Served quotes tracker reset for book: ${bookName}`,
+      book: bookName,
+      total_quotes: quotesDatabase.filter(q => q.book === bookName).length
+    });
+  }
+
+  // Reset all trackers
   servedQuotes.clear();
+  Object.keys(servedQuotesByBook).forEach(book => {
+    servedQuotesByBook[book].clear();
+  });
+
   res.json({
-    message: 'Served quotes tracker reset successfully',
+    message: 'All served quotes trackers reset successfully',
     total_quotes: quotesDatabase.length
   });
 });
@@ -169,7 +326,8 @@ app.get('/health', (req, res) => {
   res.json({
     status: 'healthy',
     quotes_loaded: quotesDatabase.length > 0,
-    total_quotes: quotesDatabase.length
+    total_quotes: quotesDatabase.length,
+    total_books: booksList.length
   });
 });
 
@@ -189,14 +347,28 @@ app.use((req, res) => {
   });
 });
 
-// Initialize and ster
+// Initialize and start server
 function startServer() {
   loadQuotesDatabase();
   
   app.listen(PORT, () => {
     console.log(`🚀 Server running on http://localhost:${PORT}`);
-    console.log(`📖 Quote endpoint: http://localhost:${PORT}/quote`);
-    console.log(`📊 Stats endpoint: http://localhost:${PORT}/stats`);
+    console.log(`\n📖 Available Endpoints:`);
+    console.log(`   GET  /quote              - Random quote from all books`);
+    console.log(`   GET  /books              - List all available books`);
+    console.log(`   GET  /quote/book/:slug   - Random quote from specific book`);
+    console.log(`   GET  /quote/:id          - Get specific quote by ID`);
+    console.log(`   GET  /stats              - Database statistics`);
+    console.log(`   POST /reset              - Reset served quotes tracker`);
+    console.log(`   GET  /health             - Health check`);
+    
+    if (booksList.length > 0) {
+      console.log(`\n📚 Book-Specific Endpoints:`);
+      booksList.forEach(book => {
+        const slug = bookNameToSlug(book);
+        console.log(`   GET  /quote/book/${slug}`);
+      });
+    }
   });
 }
 
